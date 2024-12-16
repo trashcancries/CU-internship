@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-// Function to perform convolution
+
 void convolve(int rowsA, int colsA, int A[rowsA][colsA], 
               int rowsB, int colsB, int B[rowsB][colsB], 
               int rowsC, int colsC, int C[rowsC][colsC]) {
@@ -20,11 +20,11 @@ void convolve(int rowsA, int colsA, int A[rowsA][colsA],
 int main() {
     int rowsA, colsA, rowsB, colsB;
 
-    // Input dimensions for matrix A
+    
     printf("Enter dimensions of Matrix A (rows and columns): ");
     scanf("%d %d", &rowsA, &colsA);
 
-    // Input matrix A
+    
     int A[rowsA][colsA];
     printf("Enter elements of Matrix A:\n");
     for (int i = 0; i < rowsA; i++) {
@@ -33,11 +33,11 @@ int main() {
         }
     }
 
-    // Input dimensions for kernel matrix B
+    
     printf("Enter dimensions of Matrix B (rows and columns): ");
     scanf("%d %d", &rowsB, &colsB);
 
-    // Input kernel matrix B
+  
     int B[rowsB][colsB];
     printf("Enter elements of Matrix B (kernel):\n");
     for (int i = 0; i < rowsB; i++) {
@@ -46,7 +46,7 @@ int main() {
         }
     }
 
-    // Compute dimensions of result matrix C
+    
     int rowsC = rowsA - rowsB + 1;
     int colsC = colsA - colsB + 1;
     if (rowsC <= 0 || colsC <= 0) {
@@ -54,13 +54,13 @@ int main() {
         return 1;
     }
 
-    // Output matrix C
+    
     int C[rowsC][colsC];
 
-    // Perform convolution
+    
     convolve(rowsA, colsA, A, rowsB, colsB, B, rowsC, colsC, C);
 
-    // Print the result
+    
     printf("Resultant Matrix after Convolution:\n");
     for (int i = 0; i < rowsC; i++) {
         for (int j = 0; j < colsC; j++) {

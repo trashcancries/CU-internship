@@ -1,235 +1,211 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+// Structure to represent a matrix
+typedef struct {
+    int rows;
+    int cols;
+    int** data;
+} Matrix;
 
-void convolve(int rowsA, int colsA, int A[rowsA][colsA], 
-              int rowsB, int colsB, int B[rowsB][colsB],
-              int stride, int rowsC, int colsC, int C[rowsC][colsC]) {
-    for (int i = 0; i < rowsC; i++) {
-        for (int j = 0; j < colsC; j++) {
+// Memory allocation functions
+Matrix* createMatrix(int rows, int cols) {
+    Matrix* matrix = (Matrix*)malloc(sizeof(Matrix));
+    if (!matrix) {
+        fprintf(stderr, "Memory allocation failed for matrix structure\n");
+        exit(EXIT_FAILURE);
+    }
+
+    matrix->rows = rows;
+    matrix->cols = cols;
+    
+    // Allocate 2D array
+    matrix->data = (int**)malloc(rows * sizeof(int*));
+    if (!matrix->data) {
+        free(matrix);
+        fprintf(stderr, "Memory allocation failed for matrix rows\n");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < rows; i++) {
+        matrix->data[i] = (int*)calloc(cols, sizeof(int));
+        if (!matrix->data[i]) {
+            // Free previously allocated rows
+            for (int j = 0; j < i; j++) {
+                free(matrix->data[j]);
+            }
+            free(matrix->data);
+            free(matrix);
+            fprintf(stderr, "Memory allocation failed for matrix columns\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    return matrix;
+}
+
+// Free matrix memory
+void freeMatrix(Matrix* matrix) {
+    if (!matrix) return;
+    
+    for (int i = 0; i < matrix->rows; i++) {
+        free(matrix->data[i]);
+    }
+    free(matrix->data);
+    free(matrix);
+}
+
+// Read matrix from CSV file
+Matrix* readMatrixFromCSV(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        fprintf(stderr, "Error opening file: %s\n", filename);
+        return NULL;
+    }
+
+    // First pass: determine matrix dimensions
+    int rows = 0, cols = 0;
+    char line[4096];
+    
+    while (fgets(line, sizeof(line), file)) {
+        rows++;
+        
+        // Count columns in first row
+        if (rows == 1) {
+            char* token = strtok(line, ",");
+            while (token) {
+                cols++;
+                token = strtok(NULL, ",");
+            }
+            rewind(file);
+        }
+    }
+
+    // Create matrix with determined dimensions
+    Matrix* matrix = createMatrix(rows, cols);
+
+    // Read data
+    rewind(file);
+    for (int i = 0; i < rows; i++) {
+        if (!fgets(line, sizeof(line), file)) break;
+        
+        char* token = strtok(line, ",");
+        for (int j = 0; j < cols && token; j++) {
+            matrix->data[i][j] = atoi(token);
+            token = strtok(NULL, ",");
+        }
+    }
+
+    fclose(file);
+    return matrix;
+}
+
+// Convolution function
+Matrix* convolve(Matrix* input, Matrix* filter, int stride) {
+    // Calculate output dimensions
+    int outputRows = ((input->rows - filter->rows) / stride) + 1;
+    int outputCols = ((input->cols - filter->cols) / stride) + 1;
+
+    // Validate dimensions
+    if (outputRows <= 0 || outputCols <= 0) {
+        fprintf(stderr, "Invalid convolution dimensions\n");
+        return NULL;
+    }
+
+    // Create output matrix
+    Matrix* output = createMatrix(outputRows, outputCols);
+
+    // Perform convolution
+    for (int i = 0; i < outputRows; i++) {
+        for (int j = 0; j < outputCols; j++) {
             int sum = 0;
-            for (int m = 0; m < rowsB; m++) {
-                for (int n = 0; n < colsB; n++) {
-                    sum += A[i * stride + m][j * stride + n] * B[m][n];
+            for (int m = 0; m < filter->rows; m++) {
+                for (int n = 0; n < filter->cols; n++) {
+                    sum += input->data[i*stride + m][j*stride + n] * filter->data[m][n];
                 }
             }
-            C[i][j] = sum;
+            output->data[i][j] = sum;
         }
     }
+
+    return output;
 }
 
-void getMatrixDimensionsFromCSV(const char* filename, int* n) {
-    FILE* file = fopen(filename, "r");
-    if (!file) {
-        perror("Error opening file");
-        exit(EXIT_FAILURE);
+// Print matrix
+void printMatrix(Matrix* matrix) {
+    if (!matrix) {
+        printf("NULL matrix\n");
+        return;
     }
 
-    char line[1024];
-    int rowCount = 0, columnCount = 0;
-
-    if (fgets(line, sizeof(line), file)) {
-        char* token = strtok(line, ",");
-        while (token) {
-            columnCount++;
-            token = strtok(NULL, ",");
-        }
-    }
-    rowCount++;
-
-    while (fgets(line, sizeof(line), file)) {
-        rowCount++;
-    }
-
-    fclose(file);
-
-    *n = columnCount;
-}
-
-int*** allocateMatrix(int n) {
-    int numMatrices = 1;
-    int*** filters = (int***)malloc(numMatrices * sizeof(int**));
-    if (!filters) {
-        perror("Memory allocation failed");
-        exit(EXIT_FAILURE);
-    }
-
-    for (int i = 0; i < numMatrices; i++) {
-        filters[i] = (int**)malloc(n * sizeof(int*));
-        for (int j = 0; j < n; j++) {
-            filters[i][j] = (int*)malloc(n * sizeof(int));
-        }
-    }
-    return filters;
-}
-
-void readFiltersFromCSV(const char* filename, int*** filters, int n) {
-    FILE* file = fopen(filename, "r");
-    if (!file) {
-        perror("Error opening file");
-        exit(EXIT_FAILURE);
-    }
-
-    char line[1024];
-    int matrixIndex = 0, rowIndex = 0;
-
-    while (fgets(line, sizeof(line), file)) {
-        if (matrixIndex >= 1) break;
-
-        char* token = strtok(line, ",");
-        for (int colIndex = 0; colIndex < n && token; colIndex++) {
-            filters[matrixIndex][rowIndex][colIndex] = atoi(token);
-            token = strtok(NULL, ",");
-        }
-
-        rowIndex++;
-        if (rowIndex == n) {
-            rowIndex = 0;
-            matrixIndex++;
-        }
-    }
-
-    fclose(file);
-}
-
-void getFilterMatrixDimensionsFromCSV(const char* filename, int* numMatrices, int* n) {
-    FILE* file = fopen(filename, "r");
-    if (!file) {
-        perror("Error opening file");
-        exit(EXIT_FAILURE);
-    }
-
-    char line[1024];
-    int rowCount = 0, columnCount = 0;
-
-    if (fgets(line, sizeof(line), file)) {
-        char* token = strtok(line, ",");
-        while (token) {
-            columnCount++;
-            token = strtok(NULL, ",");
-        }
-    }
-    rowCount++;
-
-    while (fgets(line, sizeof(line), file)) {
-        rowCount++;
-    }
-
-    fclose(file);
-
-    *n = columnCount;
-    *numMatrices = rowCount / (*n);
-}
-
-int*** allocateFilters(int numMatrices, int n) {
-    int*** filters = (int***)malloc(numMatrices * sizeof(int**));
-    if (!filters) {
-        perror("Memory allocation failed");
-        exit(EXIT_FAILURE);
-    }
-
-    for (int i = 0; i < numMatrices; i++) {
-        filters[i] = (int**)malloc(n * sizeof(int*));
-        for (int j = 0; j < n; j++) {
-            filters[i][j] = (int*)malloc(n * sizeof(int));
-        }
-    }
-    return filters;
-}
-
-void readFiltersFromCSV(const char* filename, int*** filters, int numMatrices, int n) {
-    FILE* file = fopen(filename, "r");
-    if (!file) {
-        perror("Error opening file");
-        exit(EXIT_FAILURE);
-    }
-
-    char line[1024];
-    int matrixIndex = 0, rowIndex = 0;
-
-    while (fgets(line, sizeof(line), file)) {
-        if (matrixIndex >= numMatrices) break;
-
-        char* token = strtok(line, ",");
-        for (int colIndex = 0; colIndex < n && token; colIndex++) {
-            filters[matrixIndex][rowIndex][colIndex] = atoi(token);
-            token = strtok(NULL, ",");
-        }
-
-        rowIndex++;
-        if (rowIndex == n) {
-            rowIndex = 0;
-            matrixIndex++;
-        }
-    }
-
-    fclose(file);
-}
-
-void freeFilters(int*** filters, int numMatrices, int n) {
-    for (int i = 0; i < numMatrices; i++) {
-        for (int j = 0; j < n; j++) {
-            free(filters[i][j]);
-        }
-        free(filters[i]);
-    }
-    free(filters);
-}
-
-void freeMatrix(int*** filters, int n) {
-    for (int i = 0; i < 1; i++) {
-        for (int j = 0; j < n; j++) {
-            free(filters[i][j]);
-        }
-        free(filters[i]);
-    }
-    free(filters);
-}
-
-int main() {
-    const char* filtersFile = "filters.csv";
-    int numMatrices, n;
-
-    getFilterMatrixDimensionsFromCSV(filtersFile, &numMatrices, &n);
-    int*** filters = allocateFilters(numMatrices, n);
-    readFiltersFromCSV(filtersFile, filters, numMatrices, n);
-
-    const char* inputFile = "input.csv";
-    int x;
-
-    getMatrixDimensionsFromCSV(inputFile, &x);
-    int*** input = allocateMatrix(x);
-    readMatrixFromCSV(inputFile, input, x);
-
-    // TODO: implement convolution b/w filters and input
-    int stride;
-    printf("Enter stride value: ");
-    scanf("%d", &stride);
-
-    int a = ((x - n) / stride) + 1;
-
-    if (a <= 0) {
-        printf("Error: Kernel B size must be smaller than input matrix A dimensions.\n");
-        return 1;
-    }
-
-    int*** res = allocateMatrix(a);
-
-    for (int i = 0; i < numMatrices; i++) {
-        convolve(x, x, input, n, n, filters, stride, a, a, res);
-
-        for (int j = 0; j < a; j++) {
-        for (int k = 0; k < a; k++) {
-            printf("%d ", res[j][k]);
+    for (int i = 0; i < matrix->rows; i++) {
+        for (int j = 0; j < matrix->cols; j++) {
+            printf("%d ", matrix->data[i][j]);
         }
         printf("\n");
     }
+}
 
-    freeMatrix(input, x);
+int main() {
+    // Input files
+    const char* inputFile = "input.csv";
+    const char* filtersFile = "filters.csv";
+
+    // Read input matrix
+    Matrix* inputMatrix = readMatrixFromCSV(inputFile);
+    if (!inputMatrix) {
+        fprintf(stderr, "Failed to read input matrix\n");
+        return EXIT_FAILURE;
     }
 
-    freeFilters(filters, numMatrices, n);
-    freeMatrix(input, x);
+    // Read filters matrix
+    Matrix* filtersMatrix = readMatrixFromCSV(filtersFile);
+    if (!filtersMatrix) {
+        fprintf(stderr, "Failed to read filters matrix\n");
+        freeMatrix(inputMatrix);
+        return EXIT_FAILURE;
+    }
 
-    return 0;
+    // Stride input
+    int stride;
+    printf("Enter stride value: ");
+    if (scanf("%d", &stride) != 1 || stride <= 0) {
+        fprintf(stderr, "Invalid stride value\n");
+        freeMatrix(inputMatrix);
+        freeMatrix(filtersMatrix);
+        return EXIT_FAILURE;
+    }
+
+    // Number of filters (assuming each filter is square and same size as filter dimensions)
+    int numFilters = filtersMatrix->rows / filtersMatrix->cols;
+
+    // Perform convolution for each filter
+    for (int f = 0; f < numFilters; f++) {
+        // Extract current filter
+        Matrix* currentFilter = createMatrix(filtersMatrix->cols, filtersMatrix->cols);
+        for (int i = 0; i < currentFilter->rows; i++) {
+            for (int j = 0; j < currentFilter->cols; j++) {
+                currentFilter->data[i][j] = filtersMatrix->data[f * currentFilter->rows + i][j];
+            }
+        }
+
+        // Perform convolution
+        printf("\nConvolution Result for Filter %d:\n", f + 1);
+        Matrix* result = convolve(inputMatrix, currentFilter, stride);
+        
+        if (result) {
+            printMatrix(result);
+            freeMatrix(result);
+        }
+
+        // Free current filter
+        freeMatrix(currentFilter);
+    }
+
+    // Free matrices
+    freeMatrix(inputMatrix);
+    freeMatrix(filtersMatrix);
+
+    return EXIT_SUCCESS;
 }
